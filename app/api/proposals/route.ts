@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
     .order('order_num', { ascending: false })
     .limit(1);
 
-  const nextOrderNum = body.order_num || ((existingProposals?.[0]?.order_num || 0) + 1);
+  const proposals = existingProposals as { order_num: number }[] | null;
+  const nextOrderNum = body.order_num || ((proposals?.[0]?.order_num || 0) + 1);
 
   const { data, error } = await supabase
     .from('proposal')
