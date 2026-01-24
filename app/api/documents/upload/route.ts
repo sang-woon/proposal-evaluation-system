@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     // DB에 메타데이터 저장
     const { data: document, error: dbError } = await supabase
       .from('proposal_document')
-      .insert([{
+      .insert({
         proposal_id: proposalId || null,
         document_type: documentType,
         file_name: file.name,
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
         mime_type: file.type || 'application/octet-stream',
         storage_path: storagePath,
         uploaded_by: 'admin',
-      }])
+      } as never)
       .select()
       .single();
 
