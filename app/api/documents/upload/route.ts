@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
     // 기존 문서가 있으면 Storage와 DB에서 삭제
     if (existingDocs && existingDocs.length > 0) {
-      for (const doc of existingDocs) {
+      for (const doc of existingDocs as { id: string; storage_path: string }[]) {
         // Storage에서 파일 삭제
         await supabase.storage
           .from('proposal-documents')
