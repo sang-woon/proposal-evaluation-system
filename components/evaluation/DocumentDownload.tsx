@@ -81,7 +81,7 @@ export function DocumentDownload({ proposals: propProposals }: DocumentDownloadP
   return (
     <div className="space-y-4">
       {error && (
-        <Alert type="error" onClose={() => setError(null)}>
+        <Alert variant="error" onClick={() => setError(null)} className="cursor-pointer">
           {error}
         </Alert>
       )}

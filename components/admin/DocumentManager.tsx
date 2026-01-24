@@ -151,12 +151,12 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
   return (
     <div className="space-y-6">
       {error && (
-        <Alert type="error" onClose={() => setError(null)}>
+        <Alert variant="error" onClick={() => setError(null)} className="cursor-pointer">
           {error}
         </Alert>
       )}
       {success && (
-        <Alert type="success" onClose={() => setSuccess(null)}>
+        <Alert variant="success" onClick={() => setSuccess(null)} className="cursor-pointer">
           {success}
         </Alert>
       )}
