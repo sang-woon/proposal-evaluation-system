@@ -5,6 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import type { ProposalDocument } from '@/types/document';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .from('proposal_document')
       .select('*')
       .eq('id', id)
-      .single();
+      .single<ProposalDocument>();
 
     if (error || !document) {
       return NextResponse.json(
@@ -67,7 +68,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       .from('proposal_document')
       .select('*')
       .eq('id', id)
-      .single();
+      .single<ProposalDocument>();
 
     if (fetchError || !document) {
       return NextResponse.json(
