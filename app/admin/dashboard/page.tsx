@@ -57,6 +57,8 @@ interface ProposalSummary {
   proposalId: string;
   proposalName: string;
   averageScore: number;
+  totalScore: number;  // 합계점수
+  trimmedAverageScore: number;  // 평균점수(최상위, 최하위 제외)
   evaluatorCount: number;
   rank: number;
 }
@@ -314,21 +316,21 @@ function QualitativeScoreSummary({ proposals, localEvaluations, evaluatorNames }
           <span style={{ letterSpacing: '3px' }}>작 성 자</span> : 직 책&nbsp;&nbsp;
           <span style={{ fontWeight: 'bold' }}>주무관</span>
           <span style={{ float: 'right' }}>
-            성 명&nbsp;&nbsp;____________&nbsp;&nbsp;(인)
+            성 명&nbsp;&nbsp;____________&nbsp;&nbsp;(서명)
           </span>
         </p>
         <p style={{ margin: '0 0 5px 0' }}>
           <span style={{ letterSpacing: '3px' }}>검 토 자</span> : 직 책&nbsp;&nbsp;
           <span style={{ fontWeight: 'bold' }}>AI의정혁신팀장</span>
           <span style={{ float: 'right' }}>
-            성 명&nbsp;&nbsp;____________&nbsp;&nbsp;(인)
+            성 명&nbsp;&nbsp;____________&nbsp;&nbsp;(서명)
           </span>
         </p>
         <p style={{ margin: 0 }}>
           <span style={{ letterSpacing: '3px' }}>확 인 자</span> : 직 책&nbsp;&nbsp;
           <span style={{ fontWeight: 'bold' }}>평가위원장</span>
           <span style={{ float: 'right' }}>
-            성 명&nbsp;&nbsp;____________&nbsp;&nbsp;(인)
+            성 명&nbsp;&nbsp;____________&nbsp;&nbsp;(서명)
           </span>
         </p>
       </div>
@@ -387,19 +389,22 @@ function SummarySheet({ summaries, evaluatorCount }: { summaries: ProposalSummar
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11pt', marginBottom: '30px' }}>
         <thead>
           <tr style={{ backgroundColor: '#e8f4fd' }}>
-            <th style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', width: '80px' }}>
+            <th style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', width: '60px' }}>
               순위
             </th>
-            <th style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', width: '100px' }}>
+            <th style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', width: '70px' }}>
               제안사명
             </th>
-            <th style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', width: '120px' }}>
-              평균 점수
+            <th style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', width: '80px' }}>
+              합계<br />점수
             </th>
-            <th style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', width: '100px' }}>
-              평가위원 수
+            <th style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', width: '100px', fontSize: '10pt', lineHeight: 1.3 }}>
+              평균점수<br />(최상위,최하위<br />제외)
             </th>
-            <th style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>
+            <th style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', width: '70px' }}>
+              평가<br />위원 수
+            </th>
+            <th style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold' }}>
               비고
             </th>
           </tr>
@@ -409,19 +414,22 @@ function SummarySheet({ summaries, evaluatorCount }: { summaries: ProposalSummar
             <tr key={summary.proposalId} style={{
               backgroundColor: summary.rank === 1 ? '#fffacd' : summary.rank <= 3 ? '#f0f9ff' : 'transparent'
             }}>
-              <td style={{ border: '1px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: '13pt' }}>
+              <td style={{ border: '1px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', fontSize: '12pt' }}>
                 {summary.rank}위
               </td>
-              <td style={{ border: '1px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: '14pt', color: '#256ef4' }}>
+              <td style={{ border: '1px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', fontSize: '13pt', color: '#256ef4' }}>
                 {summary.proposalName}
               </td>
-              <td style={{ border: '1px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: '13pt', color: '#256ef4' }}>
-                {summary.averageScore.toFixed(2)}점
+              <td style={{ border: '1px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', fontSize: '12pt' }}>
+                {summary.totalScore.toFixed(2)}점
               </td>
-              <td style={{ border: '1px solid #000', padding: '12px 8px', textAlign: 'center' }}>
+              <td style={{ border: '1px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold', fontSize: '12pt', color: '#256ef4' }}>
+                {summary.trimmedAverageScore.toFixed(2)}점
+              </td>
+              <td style={{ border: '1px solid #000', padding: '10px 6px', textAlign: 'center' }}>
                 {summary.evaluatorCount}명
               </td>
-              <td style={{ border: '1px solid #000', padding: '12px 8px', textAlign: 'center' }}>
+              <td style={{ border: '1px solid #000', padding: '10px 6px', textAlign: 'center', fontSize: '10pt' }}>
                 {summary.evaluatorCount < evaluatorCount ? '평가 미완료' : ''}
               </td>
             </tr>
@@ -429,10 +437,10 @@ function SummarySheet({ summaries, evaluatorCount }: { summaries: ProposalSummar
         </tbody>
         <tfoot>
           <tr style={{ backgroundColor: '#f0f0f0' }}>
-            <td colSpan={2} style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>
+            <td colSpan={2} style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold' }}>
               총점 기준
             </td>
-            <td colSpan={3} style={{ border: '2px solid #000', padding: '12px 8px', textAlign: 'center', fontWeight: 'bold' }}>
+            <td colSpan={4} style={{ border: '2px solid #000', padding: '10px 6px', textAlign: 'center', fontWeight: 'bold' }}>
               정성평가 {QUALITATIVE_TOTAL_SCORE}점 만점
             </td>
           </tr>
@@ -448,7 +456,7 @@ function SummarySheet({ summaries, evaluatorCount }: { summaries: ProposalSummar
                 평가위원장
               </td>
               <td style={{ border: '1px solid #000', padding: '12px', textAlign: 'center' }}>
-                <span style={{ fontSize: '14pt', color: '#256ef4', fontWeight: 'bold' }}>(인)</span>
+                <span style={{ fontSize: '14pt', color: '#256ef4', fontWeight: 'bold' }}>(서명)</span>
               </td>
             </tr>
             <tr>
@@ -456,7 +464,7 @@ function SummarySheet({ summaries, evaluatorCount }: { summaries: ProposalSummar
                 확인자
               </td>
               <td style={{ border: '1px solid #000', padding: '12px', textAlign: 'center' }}>
-                <span style={{ fontSize: '14pt', color: '#256ef4', fontWeight: 'bold' }}>(인)</span>
+                <span style={{ fontSize: '14pt', color: '#256ef4', fontWeight: 'bold' }}>(서명)</span>
               </td>
             </tr>
           </tbody>
@@ -467,9 +475,10 @@ function SummarySheet({ summaries, evaluatorCount }: { summaries: ProposalSummar
       <div style={{ marginTop: '30px', padding: '15px', backgroundColor: '#f9f9f9', border: '1px solid #ddd', borderRadius: '4px' }}>
         <p style={{ margin: '0 0 8px 0', fontSize: '10pt', fontWeight: 'bold' }}>※ 참고사항</p>
         <ul style={{ margin: '0', paddingLeft: '20px', fontSize: '9pt', lineHeight: 1.6 }}>
-          <li>평균 점수는 모든 평가위원의 점수를 산술평균한 값입니다.</li>
-          <li>순위는 평균 점수가 높은 순서대로 부여됩니다.</li>
-          <li>평가위원 전원이 평가를 완료한 제안서만 최종 순위에 반영됩니다.</li>
+          <li>합계점수는 모든 평가위원의 점수를 합산한 값입니다.</li>
+          <li>평균점수(최상위,최하위 제외)는 최고점과 최저점 각 1개씩을 제외한 나머지 점수의 평균입니다.</li>
+          <li>평가위원이 3명 미만인 경우, 최상위/최하위 제외 없이 일반 평균을 적용합니다.</li>
+          <li>순위는 평균점수(최상위,최하위 제외) 기준으로 높은 순서대로 부여됩니다.</li>
         </ul>
       </div>
     </div>
@@ -615,7 +624,7 @@ function ScoreSheet({ evaluation, proposalName }: { evaluation: LocalEvaluation;
               fontWeight: 'bold',
               fontSize: '11pt',
             }}>
-              (인)
+              (서명)
             </td>
           </tr>
         </tbody>
@@ -1203,19 +1212,37 @@ export default function AdminDashboardPage() {
         .map(name => localEvaluations[name]?.find(e => e.proposalId === proposal.id)?.totalScore)
         .filter((s): s is number => s !== undefined);
 
-      const averageScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      // 합계점수
+      const totalScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) : 0;
+
+      // 평균점수
+      const averageScore = scores.length > 0 ? totalScore / scores.length : 0;
+
+      // 평균점수(최상위, 최하위 제외)
+      let trimmedAverageScore = 0;
+      if (scores.length >= 3) {
+        const sortedScores = [...scores].sort((a, b) => a - b);
+        // 최하위 1개, 최상위 1개 제외
+        const trimmedScores = sortedScores.slice(1, -1);
+        trimmedAverageScore = trimmedScores.reduce((a, b) => a + b, 0) / trimmedScores.length;
+      } else if (scores.length > 0) {
+        // 3명 미만이면 일반 평균 사용
+        trimmedAverageScore = averageScore;
+      }
 
       return {
         proposalId: proposal.id,
         proposalName: proposal.name,
         averageScore,
+        totalScore,
+        trimmedAverageScore,
         evaluatorCount: scores.length,
         rank: 0
       };
     });
 
-    // 순위 계산 (평균 점수 높은 순)
-    const sorted = [...summaries].sort((a, b) => b.averageScore - a.averageScore);
+    // 순위 계산 (최상위/최하위 제외 평균 점수 높은 순)
+    const sorted = [...summaries].sort((a, b) => b.trimmedAverageScore - a.trimmedAverageScore);
     sorted.forEach((item, index) => {
       const original = summaries.find(s => s.proposalId === item.proposalId);
       if (original) original.rank = index + 1;

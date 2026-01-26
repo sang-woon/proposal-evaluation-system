@@ -96,7 +96,7 @@ export function ScoringSheet({
         <div className="header-cell evaluator">
           <span className="label">평가위원</span>
           <span className="value">{evaluatorName}</span>
-          <span className="seal">(인)</span>
+          <span className="seal">(서명)</span>
         </div>
       </div>
 

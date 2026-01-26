@@ -101,7 +101,10 @@ export default function EvaluationPage() {
   const [isSubmissionLocked, setIsSubmissionLocked] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingName, setEditingName] = useState('');
   const mainContentRef = useRef<HTMLDivElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Supabase에서 평가 데이터 로드 (병렬 페칭으로 워터폴 제거)
   const loadEvaluationsFromSupabase = async (name: string) => {
@@ -153,6 +156,65 @@ export default function EvaluationPage() {
   // 토스트 표시 함수
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
+  };
+
+  // 이름 수정 시작
+  const startEditingName = () => {
+    setEditingName(evaluatorName);
+    setIsEditingName(true);
+  };
+
+  // 이름 수정 완료
+  const handleNameChange = async () => {
+    const newName = editingName.trim();
+    if (!newName) {
+      showToast('이름을 입력해주세요.', 'error');
+      return;
+    }
+    if (newName === evaluatorName) {
+      setIsEditingName(false);
+      return;
+    }
+
+    try {
+      // 서버에 이름 변경 요청
+      const response = await fetch('/api/evaluators', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: evaluatorName,
+          newName: newName,
+        }),
+      });
+
+      if (response.ok) {
+        // 로컬 상태 업데이트
+        setEvaluatorName(newName);
+        setSavedEvaluations(prev => prev.map(e => ({
+          ...e,
+          evaluatorName: newName,
+        })));
+        showToast('이름이 변경되었습니다.', 'success');
+      } else {
+        showToast('이름 변경에 실패했습니다.', 'error');
+      }
+    } catch (error) {
+      console.error('Name change error:', error);
+      // 오프라인 모드에서도 로컬 상태는 업데이트
+      setEvaluatorName(newName);
+      setSavedEvaluations(prev => prev.map(e => ({
+        ...e,
+        evaluatorName: newName,
+      })));
+      showToast('이름이 변경되었습니다. (오프라인)', 'info');
+    }
+    setIsEditingName(false);
+  };
+
+  // 이름 수정 취소
+  const cancelEditingName = () => {
+    setIsEditingName(false);
+    setEditingName('');
   };
 
   // 로그인 처리
@@ -403,10 +465,84 @@ export default function EvaluationPage() {
             <span style={{ fontSize: '12px', color: '#6d7882' }}>{PROJECT_NAME}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {/* 평가위원 이름 표시 */}
-            <div style={{ fontSize: '13px', color: '#1e2124' }}>
+            {/* 평가위원 이름 표시 및 수정 */}
+            <div style={{ fontSize: '13px', color: '#1e2124', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#6d7882' }}>평가위원:</span>
-              <span style={{ fontWeight: 600, marginLeft: '4px' }}>{evaluatorName}</span>
+              {isEditingName ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <input
+                    type="text"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleNameChange();
+                      if (e.key === 'Escape') cancelEditingName();
+                    }}
+                    autoFocus
+                    style={{
+                      padding: '4px 8px',
+                      border: '1px solid #256ef4',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      width: '100px',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleNameChange}
+                    style={{
+                      padding: '4px 8px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: '#228738',
+                      color: '#fff',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    확인
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEditingName}
+                    style={{
+                      padding: '4px 8px',
+                      border: '1px solid #cdd1d5',
+                      borderRadius: '4px',
+                      backgroundColor: '#fff',
+                      color: '#464c53',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontWeight: 600 }}>{evaluatorName}</span>
+                  {!isSubmitted && (
+                    <button
+                      type="button"
+                      onClick={startEditingName}
+                      title="이름 수정"
+                      style={{
+                        padding: '2px 6px',
+                        border: '1px solid #cdd1d5',
+                        borderRadius: '4px',
+                        backgroundColor: '#fff',
+                        color: '#6d7882',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✏️ 수정
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: '4px' }}>
               <button type="button" onClick={() => setViewMode('input')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'input' ? '#256ef4' : '#e6e8ea', color: viewMode === 'input' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
@@ -552,17 +688,22 @@ export default function EvaluationPage() {
                     type="button"
                     key={category.id}
                     onClick={() => {
+                      setActiveCategory(category.id);
                       const element = document.getElementById(`category-${category.id}`);
-                      if (element) {
-                        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      const container = tableContainerRef.current;
+                      if (element && container) {
+                        // sticky 헤더 높이(약 45px)를 고려한 스크롤
+                        const headerOffset = 45;
+                        const elementPosition = element.offsetTop - headerOffset;
+                        container.scrollTo({ top: elementPosition, behavior: 'smooth' });
                       }
                     }}
                     aria-label={`${category.name} 카테고리로 이동`}
                     style={{
                       padding: '8px',
-                      border: 'none',
+                      border: activeCategory === category.id ? '2px solid #256ef4' : 'none',
                       borderRadius: '4px',
-                      backgroundColor: isComplete ? '#eaf6ec' : '#f4f5f6',
+                      backgroundColor: activeCategory === category.id ? '#ecf2fe' : (isComplete ? '#eaf6ec' : '#f4f5f6'),
                       color: '#1e2124',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -640,7 +781,7 @@ export default function EvaluationPage() {
             </div>
 
             {/* 평가 항목 테이블 - 모든 카테고리 */}
-            <div style={{ flex: 1, backgroundColor: '#fff', border: '1px solid #e6e8ea', borderTop: '1px solid #e6e8ea', overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
+            <div ref={tableContainerRef} style={{ flex: 1, backgroundColor: '#fff', border: '1px solid #e6e8ea', borderTop: '1px solid #e6e8ea', overflowY: 'auto', overflowX: 'hidden', minHeight: 0, position: 'relative' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '15px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f4f5f6', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -660,33 +801,36 @@ export default function EvaluationPage() {
                         <tr
                           id={`category-${category.id}`}
                           style={{
-                            backgroundColor: '#e8f4fd',
+                            backgroundColor: activeCategory === category.id ? '#256ef4' : '#e8f4fd',
                             borderTop: catIndex > 0 ? '3px solid #256ef4' : '1px solid #e6e8ea',
                             borderBottom: '1px solid #cdd1d5',
+                            transition: 'background-color 0.3s',
                           }}
                         >
-                          <td colSpan={5} style={{ padding: '10px 12px' }}>
+                          <td colSpan={5} style={{ padding: activeCategory === category.id ? '14px 16px' : '10px 12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <span style={{
-                                fontSize: '15px',
+                                fontSize: activeCategory === category.id ? '17px' : '15px',
                                 fontWeight: 700,
-                                color: '#256ef4',
+                                color: activeCategory === category.id ? '#ffffff' : '#256ef4',
+                                transition: 'all 0.3s',
                               }}>
-                                {category.name}
+                                {activeCategory === category.id && '▶ '}{category.name}
                               </span>
                               <span style={{
                                 fontSize: '13px',
-                                color: '#6d7882',
-                                backgroundColor: '#fff',
-                                padding: '2px 8px',
+                                color: activeCategory === category.id ? '#256ef4' : '#6d7882',
+                                backgroundColor: activeCategory === category.id ? '#ffffff' : '#fff',
+                                padding: activeCategory === category.id ? '4px 10px' : '2px 8px',
                                 borderRadius: '4px',
                                 border: '1px solid #e6e8ea',
+                                fontWeight: activeCategory === category.id ? 600 : 400,
                               }}>
                                 배점 {category.totalScore}점
                               </span>
                               <span style={{
                                 fontSize: '12px',
-                                color: '#6d7882',
+                                color: activeCategory === category.id ? 'rgba(255,255,255,0.9)' : '#6d7882',
                               }}>
                                 ({category.items.length}개 항목)
                               </span>

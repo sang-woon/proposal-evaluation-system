@@ -86,6 +86,9 @@ export async function PATCH(request: NextRequest) {
   if (body.is_submitted !== undefined) {
     updateData.is_submitted = body.is_submitted;
   }
+  if (body.newName) {
+    updateData.name = body.newName;
+  }
 
   let data;
   let error;

@@ -125,7 +125,7 @@ export function AggregationTable({
             <span className="sig-position">{sig.position}</span>
             <span className="sig-name-label">성 명</span>
             <span className="sig-name">{sig.name || '____________'}</span>
-            <span className="sig-seal">(인)</span>
+            <span className="sig-seal">(서명)</span>
           </div>
         ))}
       </div>
