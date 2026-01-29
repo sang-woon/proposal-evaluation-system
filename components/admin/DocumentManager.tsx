@@ -161,27 +161,48 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
         </Alert>
       )}
 
-      {/* 보안각서 (공통 문서) */}
+      {/* 공통 문서 (보안각서, 제안요청서) */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <span className="text-2xl">📄</span>
-          보안각서 (공통)
+          공통 문서
         </h3>
-        <p className="text-sm text-gray-600 mb-4">
-          {DOCUMENT_TYPE_CONFIG.security.description}
-        </p>
 
-        <DocumentRow
-          documentType="security"
-          proposalId={null}
-          document={getDocument(null, 'security')}
-          downloadUrl={getDocument(null, 'security') ? downloadUrls[getDocument(null, 'security')!.id] : undefined}
-          uploading={uploading === 'security'}
-          fileInputRef={(el) => (fileInputRefs.current['security'] = el)}
-          onFileSelect={(e) => handleFileSelect(e, 'security', null)}
-          onUploadClick={() => triggerUpload('security')}
-          onDelete={handleDelete}
-        />
+        {/* 보안각서 */}
+        <div className="mb-6">
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            📝 보안각서 ({DOCUMENT_TYPE_CONFIG.security.description})
+          </p>
+          <DocumentRow
+            documentType="security"
+            proposalId={null}
+            document={getDocument(null, 'security')}
+            downloadUrl={getDocument(null, 'security') ? downloadUrls[getDocument(null, 'security')!.id] : undefined}
+            uploading={uploading === 'security'}
+            fileInputRef={(el) => (fileInputRefs.current['security'] = el)}
+            onFileSelect={(e) => handleFileSelect(e, 'security', null)}
+            onUploadClick={() => triggerUpload('security')}
+            onDelete={handleDelete}
+          />
+        </div>
+
+        {/* 제안요청서 */}
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            📋 제안요청서 ({DOCUMENT_TYPE_CONFIG.rfp.description})
+          </p>
+          <DocumentRow
+            documentType="rfp"
+            proposalId={null}
+            document={getDocument(null, 'rfp')}
+            downloadUrl={getDocument(null, 'rfp') ? downloadUrls[getDocument(null, 'rfp')!.id] : undefined}
+            uploading={uploading === 'rfp'}
+            fileInputRef={(el) => (fileInputRefs.current['rfp'] = el)}
+            onFileSelect={(e) => handleFileSelect(e, 'rfp', null)}
+            onUploadClick={() => triggerUpload('rfp')}
+            onDelete={handleDelete}
+          />
+        </div>
       </div>
 
       {/* 제안사별 문서 */}

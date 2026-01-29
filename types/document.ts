@@ -4,7 +4,7 @@
  */
 
 // 문서 타입
-export type DocumentType = 'presentation' | 'qualitative' | 'security';
+export type DocumentType = 'presentation' | 'qualitative' | 'security' | 'rfp';
 
 // 문서 메타데이터 인터페이스 (DB 스키마 매핑)
 export interface ProposalDocument {
@@ -89,6 +89,16 @@ export const DOCUMENT_TYPE_CONFIG: Record<DocumentType, {
     maxSizeMB: 10,
     requiresProposal: false, // 공통 문서
   },
+  rfp: {
+    label: 'Request for Proposal',
+    labelKo: '제안요청서',
+    description: '제안요청서 (PDF)',
+    allowedExtensions: ['.pdf'],
+    allowedMimeTypes: ['application/pdf'],
+    maxSizeBytes: 100 * 1024 * 1024, // 100MB
+    maxSizeMB: 100,
+    requiresProposal: false, // 공통 문서
+  },
 };
 
 // 파일 확장자 검증
@@ -145,6 +155,10 @@ export function generateStoragePath(
 
   if (documentType === 'security') {
     return `common/security/${timestamp}_${safeFileName}`;
+  }
+
+  if (documentType === 'rfp') {
+    return `common/rfp/${timestamp}_${safeFileName}`;
   }
 
   return `proposals/${proposalId}/${documentType}/${timestamp}_${safeFileName}`;

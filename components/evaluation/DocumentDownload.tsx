@@ -80,8 +80,9 @@ export function DocumentDownload({ proposals: propProposals, evaluatorName }: Do
     );
   };
 
-  // 보안각서 문서
+  // 공통 문서
   const securityDoc = getDocument(null, 'security');
+  const rfpDoc = getDocument(null, 'rfp');
 
   if (loading) {
     return (
@@ -148,6 +149,32 @@ export function DocumentDownload({ proposals: propProposals, evaluatorName }: Do
           </div>
         );
       })()}
+
+      {/* 제안요청서 (공통 문서) */}
+      {rfpDoc && (
+        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📋</span>
+              <div>
+                <h4 className="font-medium text-gray-900">제안요청서</h4>
+                <p className="text-sm text-gray-500">
+                  {rfpDoc.file_name} ({formatFileSize(rfpDoc.file_size)})
+                </p>
+              </div>
+            </div>
+            {downloadUrls[rfpDoc.id] && (
+              <button
+                type="button"
+                onClick={() => downloadFileWithName(downloadUrls[rfpDoc.id], rfpDoc.file_name)}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm cursor-pointer"
+              >
+                다운로드
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 제안사별 문서 */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
