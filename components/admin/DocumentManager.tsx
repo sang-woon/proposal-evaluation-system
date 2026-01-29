@@ -11,6 +11,17 @@ import {
 } from '@/types/document';
 import type { Proposal } from '@/types/database';
 
+// 일괄 업로드용 파일 정보 인터페이스
+interface BulkUploadFile {
+  file: File;
+  detectedCompany: string | null;  // 파일명에서 감지된 회사명 (A, B, C 등)
+  detectedType: DocumentType | null;  // 파일명에서 감지된 문서 타입
+  selectedProposalId: string | null;  // 사용자가 선택한 제안사 ID
+  selectedType: DocumentType | null;  // 사용자가 선택한 문서 타입
+  status: 'pending' | 'uploading' | 'success' | 'error';
+  errorMessage?: string;
+}
+
 interface DocumentManagerProps {
   proposals: Proposal[];
   onProposalsChange?: () => void;
@@ -24,7 +35,149 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // 일괄 업로드 상태
+  const [bulkFiles, setBulkFiles] = useState<BulkUploadFile[]>([]);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const bulkFileInputRef = useRef<HTMLInputElement | null>(null);
+
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // 파일명에서 회사명과 문서 타입 감지
+  const detectFileInfo = (fileName: string): { company: string | null; type: DocumentType | null } => {
+    const lowerName = fileName.toLowerCase();
+
+    // 회사명 감지 (A~E사 또는 A~E 패턴)
+    const companyMatch = fileName.match(/([A-Ea-e])(?:사)?[_\s-]/);
+    const company = companyMatch ? companyMatch[1].toUpperCase() : null;
+
+    // 문서 타입 감지
+    let type: DocumentType | null = null;
+    if (lowerName.includes('발표') || lowerName.includes('presentation') || lowerName.includes('ppt')) {
+      type = 'presentation';
+    } else if (lowerName.includes('정성') || lowerName.includes('qualitative') || lowerName.includes('제안서')) {
+      type = 'qualitative';
+    }
+
+    return { company, type };
+  };
+
+  // 일괄 파일 선택 핸들러
+  const handleBulkFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const newBulkFiles: BulkUploadFile[] = files.map((file) => {
+      const { company, type } = detectFileInfo(file.name);
+      return {
+        file,
+        detectedCompany: company,
+        detectedType: type,
+        selectedProposalId: null,
+        selectedType: type,
+        status: 'pending' as const,
+      };
+    });
+
+    setBulkFiles((prev) => [...prev, ...newBulkFiles]);
+    e.target.value = '';
+  };
+
+  // 일괄 업로드 파일의 제안사 선택 변경
+  const handleBulkProposalChange = (index: number, proposalId: string) => {
+    setBulkFiles((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, selectedProposalId: proposalId || null } : f))
+    );
+  };
+
+  // 일괄 업로드 파일의 문서 타입 선택 변경
+  const handleBulkTypeChange = (index: number, type: DocumentType) => {
+    setBulkFiles((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, selectedType: type } : f))
+    );
+  };
+
+  // 일괄 업로드 파일 제거
+  const removeBulkFile = (index: number) => {
+    setBulkFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // 일괄 업로드 전체 제거
+  const clearBulkFiles = () => {
+    setBulkFiles([]);
+  };
+
+  // 일괄 업로드 실행
+  const executeBulkUpload = async () => {
+    // 유효성 검사
+    const invalidFiles = bulkFiles.filter(
+      (f) => !f.selectedProposalId || !f.selectedType
+    );
+    if (invalidFiles.length > 0) {
+      setError('모든 파일에 제안사와 문서 타입을 선택해주세요.');
+      return;
+    }
+
+    setBulkUploading(true);
+    setError(null);
+    setSuccess(null);
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < bulkFiles.length; i++) {
+      const bulkFile = bulkFiles[i];
+      if (bulkFile.status === 'success') continue; // 이미 성공한 파일 스킵
+
+      // 상태를 uploading으로 변경
+      setBulkFiles((prev) =>
+        prev.map((f, idx) => (idx === i ? { ...f, status: 'uploading' as const } : f))
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append('file', bulkFile.file);
+        formData.append('documentType', bulkFile.selectedType!);
+        formData.append('proposalId', bulkFile.selectedProposalId!);
+
+        const res = await fetch('/api/documents/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const { error } = await res.json();
+
+        if (error) {
+          setBulkFiles((prev) =>
+            prev.map((f, idx) =>
+              idx === i ? { ...f, status: 'error' as const, errorMessage: error } : f
+            )
+          );
+          errorCount++;
+        } else {
+          setBulkFiles((prev) =>
+            prev.map((f, idx) => (idx === i ? { ...f, status: 'success' as const } : f))
+          );
+          successCount++;
+        }
+      } catch {
+        setBulkFiles((prev) =>
+          prev.map((f, idx) =>
+            idx === i ? { ...f, status: 'error' as const, errorMessage: '업로드 실패' } : f
+          )
+        );
+        errorCount++;
+      }
+    }
+
+    setBulkUploading(false);
+    fetchDocuments();
+
+    if (successCount > 0) {
+      setSuccess(`${successCount}개 파일 업로드 완료${errorCount > 0 ? `, ${errorCount}개 실패` : ''}`);
+    } else if (errorCount > 0) {
+      setError(`${errorCount}개 파일 업로드 실패`);
+    }
+  };
 
   // 문서 목록 조회
   const fetchDocuments = useCallback(async () => {
@@ -203,6 +356,159 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
             onDelete={handleDelete}
           />
         </div>
+      </div>
+
+      {/* 일괄 업로드 섹션 */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span className="text-2xl">📤</span>
+          제안사 문서 일괄 업로드
+        </h3>
+        <p className="text-sm text-gray-600 mb-4">
+          A~E사의 발표자료와 정성적 제안서를 한 번에 업로드하고, 각 파일을 제안사에 매핑할 수 있습니다.
+          <br />
+          <span className="text-blue-600">
+            파일명 예시: &quot;A사_발표자료.pdf&quot;, &quot;A사_정성적 제안서.pdf&quot;, &quot;B사_발표자료.pptx&quot; 등
+          </span>
+        </p>
+
+        {/* 파일 선택 버튼 */}
+        <div className="mb-4">
+          <input
+            type="file"
+            ref={bulkFileInputRef}
+            onChange={handleBulkFileSelect}
+            accept=".pdf,.ppt,.pptx"
+            multiple
+            className="hidden"
+          />
+          <Button
+            onClick={() => bulkFileInputRef.current?.click()}
+            disabled={bulkUploading}
+            variant="outline"
+          >
+            📁 파일 선택 (여러 파일 가능)
+          </Button>
+        </div>
+
+        {/* 선택된 파일 목록 */}
+        {bulkFiles.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">
+                선택된 파일: {bulkFiles.length}개
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={clearBulkFiles}
+                disabled={bulkUploading}
+              >
+                전체 삭제
+              </Button>
+            </div>
+
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">파일명</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">감지된 회사</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 w-40">제안사 선택</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 w-40">문서 타입</th>
+                    <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 w-24">상태</th>
+                    <th className="px-4 py-2 text-center text-sm font-medium text-gray-700 w-16">삭제</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {bulkFiles.map((bulkFile, index) => (
+                    <tr key={index} className={bulkFile.status === 'error' ? 'bg-red-50' : bulkFile.status === 'success' ? 'bg-green-50' : ''}>
+                      <td className="px-4 py-2 text-sm">
+                        <div className="max-w-xs truncate" title={bulkFile.file.name}>
+                          {bulkFile.file.name}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {formatFileSize(bulkFile.file.size)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-sm">
+                        {bulkFile.detectedCompany ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {bulkFile.detectedCompany}사
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">미감지</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        <select
+                          value={bulkFile.selectedProposalId || ''}
+                          onChange={(e) => handleBulkProposalChange(index, e.target.value)}
+                          disabled={bulkUploading || bulkFile.status === 'success'}
+                          className="w-full px-2 py-1 text-sm border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">선택...</option>
+                          {proposals.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-2">
+                        <select
+                          value={bulkFile.selectedType || ''}
+                          onChange={(e) => handleBulkTypeChange(index, e.target.value as DocumentType)}
+                          disabled={bulkUploading || bulkFile.status === 'success'}
+                          className="w-full px-2 py-1 text-sm border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">선택...</option>
+                          <option value="presentation">📊 발표자료</option>
+                          <option value="qualitative">📑 정성적 제안서</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2 text-sm">
+                        {bulkFile.status === 'pending' && (
+                          <span className="text-gray-500">대기</span>
+                        )}
+                        {bulkFile.status === 'uploading' && (
+                          <span className="text-blue-600">업로드 중...</span>
+                        )}
+                        {bulkFile.status === 'success' && (
+                          <span className="text-green-600">✓ 완료</span>
+                        )}
+                        {bulkFile.status === 'error' && (
+                          <span className="text-red-600" title={bulkFile.errorMessage}>
+                            ✕ 실패
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <button
+                          onClick={() => removeBulkFile(index)}
+                          disabled={bulkUploading}
+                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 일괄 업로드 버튼 */}
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={executeBulkUpload}
+                disabled={bulkUploading || bulkFiles.every((f) => f.status === 'success')}
+              >
+                {bulkUploading ? '업로드 중...' : `${bulkFiles.filter((f) => f.status !== 'success').length}개 파일 일괄 업로드`}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 제안사별 문서 */}

@@ -535,8 +535,8 @@ export default function EvaluationPage() {
       handleProposalSelect(nextProposal.id);
       // 페이지 상단으로 스크롤
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      if (mainContentRef.current) {
-        mainContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      if (tableContainerRef.current) {
+        tableContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } else {
       // 모든 평가 완료 - 제출 모달 표시
@@ -1598,7 +1598,7 @@ export default function EvaluationPage() {
         </main>
       ) : viewMode === 'review' ? (
         /* 평가 현황 */
-        <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px 24px' }}>
+        <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px 24px', flex: 1, overflowY: 'auto' }}>
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e6e8ea', overflow: 'hidden' }}>
             <div style={{ padding: '16px', borderBottom: '1px solid #e6e8ea', fontSize: '16px', fontWeight: 600, color: '#1e2124' }}>저장된 평가 현황</div>
             {savedEvaluations.length === 0 ? (
@@ -1664,7 +1664,7 @@ export default function EvaluationPage() {
         </main>
       ) : (
         /* 자료 다운로드 */
-        <main style={{ maxWidth: '900px', margin: '0 auto', padding: '20px 24px' }}>
+        <main style={{ maxWidth: '900px', margin: '0 auto', padding: '20px 24px', flex: 1, overflowY: 'auto' }}>
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e6e8ea', padding: '16px', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1e2124', margin: '0 0 4px 0' }}>📁 제안서 자료 다운로드</h3>
             <p style={{ fontSize: '13px', color: '#6d7882', margin: 0 }}>

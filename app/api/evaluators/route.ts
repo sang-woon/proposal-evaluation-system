@@ -103,14 +103,45 @@ export async function PATCH(request: NextRequest) {
     data = result.data;
     error = result.error;
   } else if (body.name) {
-    const result = await supabase
+    // 먼저 기존 평가위원이 있는지 확인
+    const { data: existingEvaluator } = await supabase
       .from('evaluator')
-      .update(updateData as never)
+      .select('*')
       .eq('name', body.name)
-      .select()
-      .single();
-    data = result.data;
-    error = result.error;
+      .maybeSingle();
+
+    if (existingEvaluator) {
+      // 기존 평가위원이 있으면 업데이트
+      const result = await supabase
+        .from('evaluator')
+        .update(updateData as never)
+        .eq('name', body.name)
+        .select()
+        .single();
+      data = result.data;
+      error = result.error;
+    } else if (body.newName) {
+      // 기존 평가위원이 없고 이름 변경 요청이면 새로 생성
+      const result = await supabase
+        .from('evaluator')
+        .insert({ name: body.newName, is_submitted: false } as any)
+        .select()
+        .single();
+      data = result.data;
+      error = result.error;
+    } else {
+      // 기존 평가위원이 없고 이름 변경이 아니면 새로 생성 (기존 이름으로)
+      const result = await supabase
+        .from('evaluator')
+        .insert({
+          name: body.name,
+          is_submitted: body.is_submitted ?? false
+        } as any)
+        .select()
+        .single();
+      data = result.data;
+      error = result.error;
+    }
   } else {
     return NextResponse.json(
       { data: null, error: { message: '평가위원 ID 또는 이름이 필요합니다.', code: 'VALIDATION_ERROR' } },
