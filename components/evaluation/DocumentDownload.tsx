@@ -10,6 +10,26 @@ import {
 } from '@/types/document';
 import type { Proposal } from '@/types/database';
 
+// 파일 다운로드 헬퍼 함수 (원하는 파일명으로 저장)
+async function downloadFileWithName(url: string, fileName: string) {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error('Download failed:', error);
+    // 실패 시 기본 방식으로 다운로드
+    window.open(url, '_blank');
+  }
+}
+
 interface DocumentDownloadProps {
   proposals?: Proposal[];
   evaluatorName?: string;
@@ -116,13 +136,13 @@ export function DocumentDownload({ proposals: propProposals, evaluatorName }: Do
                 </div>
               </div>
               {downloadUrls[securityDoc.id] && (
-                <a
-                  href={downloadUrls[securityDoc.id]}
-                  download={downloadFileName}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium text-sm"
+                <button
+                  type="button"
+                  onClick={() => downloadFileWithName(downloadUrls[securityDoc.id], downloadFileName)}
+                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium text-sm cursor-pointer"
                 >
                   다운로드
-                </a>
+                </button>
               )}
             </div>
           </div>
@@ -202,13 +222,13 @@ function DocumentItem({ icon, label, document, downloadUrl }: DocumentItemProps)
         </div>
       </div>
       {downloadUrl ? (
-        <a
-          href={downloadUrl}
-          download={document.file_name}
-          className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm font-medium"
+        <button
+          type="button"
+          onClick={() => downloadFileWithName(downloadUrl, document.file_name)}
+          className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm font-medium cursor-pointer"
         >
           다운로드
-        </a>
+        </button>
       ) : (
         <span className="text-xs text-gray-400">URL 생성 중...</span>
       )}
