@@ -1652,6 +1652,7 @@ export default function EvaluationPage() {
               order_num: p.order_num,
               created_at: new Date().toISOString(),
             }))}
+            evaluatorName={evaluatorName}
           />
         </main>
       )}

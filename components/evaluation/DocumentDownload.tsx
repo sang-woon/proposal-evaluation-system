@@ -12,9 +12,10 @@ import type { Proposal } from '@/types/database';
 
 interface DocumentDownloadProps {
   proposals?: Proposal[];
+  evaluatorName?: string;
 }
 
-export function DocumentDownload({ proposals: propProposals }: DocumentDownloadProps) {
+export function DocumentDownload({ proposals: propProposals, evaluatorName }: DocumentDownloadProps) {
   const [documents, setDocuments] = useState<ProposalDocument[]>([]);
   const [downloadUrls, setDownloadUrls] = useState<Record<string, string>>({});
   const [proposals, setProposals] = useState<Proposal[]>(propProposals || []);
@@ -87,30 +88,46 @@ export function DocumentDownload({ proposals: propProposals }: DocumentDownloadP
       )}
 
       {/* 보안각서 (공통 문서) */}
-      {securityDoc && (
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📄</span>
-              <div>
-                <h4 className="font-medium text-gray-900">보안각서</h4>
-                <p className="text-sm text-gray-500">
-                  {securityDoc.file_name} ({formatFileSize(securityDoc.file_size)})
-                </p>
+      {securityDoc && (() => {
+        // 파일 확장자 추출
+        const originalName = securityDoc.file_name;
+        const lastDotIndex = originalName.lastIndexOf('.');
+        const extension = lastDotIndex >= 0 ? originalName.substring(lastDotIndex) : '.hwpx';
+        // 평가위원 이름이 있으면 "보안각서-평가위원이름.확장자" 형식으로
+        const downloadFileName = evaluatorName
+          ? `보안각서-${evaluatorName}${extension}`
+          : originalName;
+
+        return (
+          <div className="bg-white rounded-lg shadow p-4 border-l-4 border-yellow-500">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📄</span>
+                <div>
+                  <h4 className="font-medium text-gray-900">보안각서</h4>
+                  <p className="text-sm text-gray-500">
+                    {securityDoc.file_name} ({formatFileSize(securityDoc.file_size)})
+                  </p>
+                  {evaluatorName && (
+                    <p className="text-xs text-yellow-600 mt-1">
+                      → 다운로드 시 파일명: {downloadFileName}
+                    </p>
+                  )}
+                </div>
               </div>
+              {downloadUrls[securityDoc.id] && (
+                <a
+                  href={downloadUrls[securityDoc.id]}
+                  download={downloadFileName}
+                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium text-sm"
+                >
+                  다운로드
+                </a>
+              )}
             </div>
-            {downloadUrls[securityDoc.id] && (
-              <a
-                href={downloadUrls[securityDoc.id]}
-                download={securityDoc.file_name}
-                className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium text-sm"
-              >
-                다운로드
-              </a>
-            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 제안사별 문서 */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
