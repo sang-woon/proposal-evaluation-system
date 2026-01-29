@@ -13,6 +13,26 @@ import type { ProposalDocument, DocumentType } from '@/types/document';
 
 const PROJECT_NAME = "경기도의회 블록체인 기반 모바일 의정지원 시스템 구축";
 
+// 파일 다운로드 헬퍼 함수 (원하는 파일명으로 저장)
+async function downloadFileWithName(url: string, fileName: string) {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error('Download failed:', error);
+    // 실패 시 새 탭에서 열기
+    window.open(url, '_blank');
+  }
+}
+
 // 제안서 타입
 interface Proposal {
   id: string;
@@ -1181,9 +1201,9 @@ export default function EvaluationPage() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {presentationDoc && downloadUrls[presentationDoc.id] && (
-                        <a
-                          href={downloadUrls[presentationDoc.id]}
-                          download={presentationDoc.file_name}
+                        <button
+                          type="button"
+                          onClick={() => downloadFileWithName(downloadUrls[presentationDoc.id], presentationDoc.file_name)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1196,6 +1216,9 @@ export default function EvaluationPage() {
                             color: '#1e2124',
                             fontSize: '12px',
                             transition: 'all 0.2s',
+                            cursor: 'pointer',
+                            width: '100%',
+                            textAlign: 'left',
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = '#ecf2fe';
@@ -1214,12 +1237,12 @@ export default function EvaluationPage() {
                             </div>
                           </div>
                           <span style={{ fontSize: '14px', color: '#256ef4' }}>↓</span>
-                        </a>
+                        </button>
                       )}
                       {qualitativeDoc && downloadUrls[qualitativeDoc.id] && (
-                        <a
-                          href={downloadUrls[qualitativeDoc.id]}
-                          download={qualitativeDoc.file_name}
+                        <button
+                          type="button"
+                          onClick={() => downloadFileWithName(downloadUrls[qualitativeDoc.id], qualitativeDoc.file_name)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1232,6 +1255,9 @@ export default function EvaluationPage() {
                             color: '#1e2124',
                             fontSize: '12px',
                             transition: 'all 0.2s',
+                            cursor: 'pointer',
+                            width: '100%',
+                            textAlign: 'left',
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = '#f0faf1';
@@ -1250,7 +1276,7 @@ export default function EvaluationPage() {
                             </div>
                           </div>
                           <span style={{ fontSize: '14px', color: '#228738' }}>↓</span>
-                        </a>
+                        </button>
                       )}
                     </div>
                   </div>

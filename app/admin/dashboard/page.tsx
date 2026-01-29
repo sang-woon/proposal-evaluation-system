@@ -66,8 +66,14 @@ interface ProposalSummary {
 // 날짜 포맷터 (성능을 위해 재사용)
 const dateFormatter = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
+// 소수점 2자리 버림 함수
+function truncateToTwoDecimals(num: number): number {
+  return Math.floor(num * 100) / 100;
+}
+
 // 평균 계산 함수 (최상위/최하위 제외)
 // 규칙: 최상위와 최하위를 제외한 후 평균 산정하며, 최상위와 최하위 평점이 2개 이상인 경우에는 1개씩만을 제외
+// 모든 점수는 소수점 2자리로 버림 처리
 function calculateAdjustedAverage(scores: { evaluatorName: string; score: number }[]): {
   average: number;
   excludedHighest: string[];
@@ -77,23 +83,29 @@ function calculateAdjustedAverage(scores: { evaluatorName: string; score: number
     return { average: 0, excludedHighest: [], excludedLowest: [] };
   }
 
-  if (scores.length <= 2) {
+  // 모든 점수를 소수점 2자리로 버림 처리
+  const truncatedScores = scores.map(s => ({
+    evaluatorName: s.evaluatorName,
+    score: truncateToTwoDecimals(s.score)
+  }));
+
+  if (truncatedScores.length <= 2) {
     // 2명 이하면 제외 없이 평균
-    const avg = scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
-    return { average: avg, excludedHighest: [], excludedLowest: [] };
+    const avg = truncatedScores.reduce((sum, s) => sum + s.score, 0) / truncatedScores.length;
+    return { average: truncateToTwoDecimals(avg), excludedHighest: [], excludedLowest: [] };
   }
 
   // 정렬하여 최상위/최하위 찾기
-  const sorted = [...scores].sort((a, b) => b.score - a.score);
+  const sorted = [...truncatedScores].sort((a, b) => b.score - a.score);
   const highestScore = sorted[0].score;
   const lowestScore = sorted[sorted.length - 1].score;
 
   // 최상위 점수를 가진 평가위원들 (2개 이상이면 1개만 제외)
-  const highestEvaluators = scores.filter(s => s.score === highestScore);
+  const highestEvaluators = truncatedScores.filter(s => s.score === highestScore);
   const excludedHighest = highestEvaluators.length > 0 ? [highestEvaluators[0].evaluatorName] : [];
 
   // 최하위 점수를 가진 평가위원들 (2개 이상이면 1개만 제외)
-  const lowestEvaluators = scores.filter(s => s.score === lowestScore);
+  const lowestEvaluators = truncatedScores.filter(s => s.score === lowestScore);
   // 만약 최상위와 최하위가 같은 점수면 (모두 동점) 1개만 제외
   let excludedLowest: string[] = [];
   if (highestScore !== lowestScore) {
@@ -103,10 +115,10 @@ function calculateAdjustedAverage(scores: { evaluatorName: string; score: number
   // 제외된 평가위원 목록
   const excludedNames = new Set([...excludedHighest, ...excludedLowest]);
 
-  // 제외 후 평균 계산
-  const remainingScores = scores.filter(s => !excludedNames.has(s.evaluatorName));
+  // 제외 후 평균 계산 (소수점 2자리 버림)
+  const remainingScores = truncatedScores.filter(s => !excludedNames.has(s.evaluatorName));
   const average = remainingScores.length > 0
-    ? remainingScores.reduce((sum, s) => sum + s.score, 0) / remainingScores.length
+    ? truncateToTwoDecimals(remainingScores.reduce((sum, s) => sum + s.score, 0) / remainingScores.length)
     : 0;
 
   return { average, excludedHighest, excludedLowest };
@@ -257,7 +269,7 @@ function QualitativeScoreSummary({ proposals, localEvaluations, evaluatorNames }
                     <td key={proposal.id} style={cellStyle}>
                       {score !== undefined ? (
                         <>
-                          <span>{score.toFixed(0)}</span>
+                          <span>{truncateToTwoDecimals(score).toFixed(2)}</span>
                           {excludeLabel && (
                             <>
                               <br />
@@ -1205,26 +1217,28 @@ export default function AdminDashboardPage() {
     };
   });
 
-  // 총괄표용 데이터 계산
+  // 총괄표용 데이터 계산 (모든 점수는 소수점 2자리 버림 처리)
   const calculateSummaryData = (): ProposalSummary[] => {
     const summaries = proposals.map(proposal => {
+      // 점수를 소수점 2자리로 버림 처리
       const scores = evaluatorNames
         .map(name => localEvaluations[name]?.find(e => e.proposalId === proposal.id)?.totalScore)
-        .filter((s): s is number => s !== undefined);
+        .filter((s): s is number => s !== undefined)
+        .map(s => truncateToTwoDecimals(s));
 
-      // 합계점수
-      const totalScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) : 0;
+      // 합계점수 (버림 처리된 점수들의 합, 결과도 버림)
+      const totalScore = scores.length > 0 ? truncateToTwoDecimals(scores.reduce((a, b) => a + b, 0)) : 0;
 
-      // 평균점수
-      const averageScore = scores.length > 0 ? totalScore / scores.length : 0;
+      // 평균점수 (버림 처리)
+      const averageScore = scores.length > 0 ? truncateToTwoDecimals(totalScore / scores.length) : 0;
 
-      // 평균점수(최상위, 최하위 제외)
+      // 평균점수(최상위, 최하위 제외) - 버림 처리
       let trimmedAverageScore = 0;
       if (scores.length >= 3) {
         const sortedScores = [...scores].sort((a, b) => a - b);
         // 최하위 1개, 최상위 1개 제외
         const trimmedScores = sortedScores.slice(1, -1);
-        trimmedAverageScore = trimmedScores.reduce((a, b) => a + b, 0) / trimmedScores.length;
+        trimmedAverageScore = truncateToTwoDecimals(trimmedScores.reduce((a, b) => a + b, 0) / trimmedScores.length);
       } else if (scores.length > 0) {
         // 3명 미만이면 일반 평균 사용
         trimmedAverageScore = averageScore;

@@ -127,3 +127,42 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ data, error: null });
 }
+
+// DELETE: 평가위원 삭제 (관련 점수 데이터도 함께 삭제)
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
+
+  if (!id) {
+    return NextResponse.json(
+      { data: null, error: { message: '평가위원 ID가 필요합니다.', code: 'VALIDATION_ERROR' } },
+      { status: 400 }
+    );
+  }
+
+  // 1. 관련 점수 데이터 먼저 삭제
+  const { error: scoresError } = await supabase
+    .from('evaluation_score')
+    .delete()
+    .eq('evaluator_id', id);
+
+  if (scoresError) {
+    console.error('점수 삭제 실패:', scoresError);
+  }
+
+  // 2. 평가위원 삭제
+  const { data, error } = await supabase
+    .from('evaluator')
+    .delete()
+    .eq('id', id)
+    .select();
+
+  if (error) {
+    return NextResponse.json(
+      { data: null, error: { message: error.message, code: error.code } },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ data, error: null, message: '평가위원이 삭제되었습니다.' });
+}
