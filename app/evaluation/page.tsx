@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
+import { useState, useMemo, useEffect, useRef, Fragment, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   type GradeLevel,
   calculateGradeScore,
@@ -8,6 +9,7 @@ import {
   QUALITATIVE_TOTAL_SCORE,
 } from '@/types/evaluation';
 import { DocumentDownload } from '@/components/evaluation/DocumentDownload';
+import type { ProposalDocument, DocumentType } from '@/types/document';
 
 const PROJECT_NAME = "경기도의회 블록체인 기반 모바일 의정지원 시스템 구축";
 
@@ -103,8 +105,18 @@ export default function EvaluationPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState('');
+  const [documents, setDocuments] = useState<ProposalDocument[]>([]);
+  const [downloadUrls, setDownloadUrls] = useState<Record<string, string>>({});
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showIncompleteModal, setShowIncompleteModal] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [viewModeHistory, setViewModeHistory] = useState<Array<'input' | 'review' | 'documents'>>(['input']);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   // Supabase에서 평가 데이터 로드 (병렬 페칭으로 워터폴 제거)
   const loadEvaluationsFromSupabase = async (name: string) => {
@@ -157,6 +169,139 @@ export default function EvaluationPage() {
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
   };
+
+  // 문서 목록 로드
+  const loadDocuments = useCallback(async () => {
+    setDocumentsLoading(true);
+    try {
+      const res = await fetch('/api/documents?all=true');
+      const { data, error } = await res.json();
+
+      if (!error && data) {
+        setDocuments(data.documents || []);
+        setDownloadUrls(data.downloadUrls || {});
+      }
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }, []);
+
+  // 특정 제안사/타입의 문서 찾기
+  const getDocument = useCallback((proposalId: string | null, documentType: DocumentType) => {
+    return documents.find(
+      (doc) =>
+        doc.document_type === documentType &&
+        (proposalId ? doc.proposal_id === proposalId : doc.proposal_id === null)
+    );
+  }, [documents]);
+
+  // 미저장 변경 감지
+  useEffect(() => {
+    const savedData = getSavedEvaluation(selectedProposal);
+    if (savedData) {
+      // 저장된 데이터와 현재 데이터 비교
+      const scoresChanged = JSON.stringify(savedData.scores) !== JSON.stringify(scores);
+      const commentChanged = savedData.comment !== comment;
+      setHasUnsavedChanges(scoresChanged || commentChanged);
+    } else {
+      // 저장된 데이터가 없는 경우 점수나 코멘트가 있으면 미저장 상태
+      setHasUnsavedChanges(Object.keys(scores).length > 0 || comment.length > 0);
+    }
+  }, [scores, comment, selectedProposal]);
+
+  // 브라우저 종료/새로고침 시 경고
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isLoggedIn && (hasUnsavedChanges || savedEvaluations.length > 0)) {
+        e.preventDefault();
+        e.returnValue = '시스템을 종료하시겠습니까? 저장하지 않은 변경사항이 있을 수 있습니다.';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isLoggedIn, hasUnsavedChanges, savedEvaluations.length]);
+
+  // 뒤로가기 처리
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (isLoggedIn) {
+        e.preventDefault();
+        if (viewModeHistory.length > 1) {
+          // 이전 viewMode로 돌아가기
+          const newHistory = [...viewModeHistory];
+          newHistory.pop();
+          const previousMode = newHistory[newHistory.length - 1];
+          setViewModeHistory(newHistory);
+          setViewMode(previousMode);
+          // 히스토리 상태 복원
+          window.history.pushState({ viewMode: previousMode }, '');
+        } else {
+          // 시스템 종료 확인
+          setShowExitConfirm(true);
+          window.history.pushState({}, '');
+        }
+      }
+    };
+
+    // 초기 히스토리 상태 설정
+    window.history.pushState({ viewMode: 'input' }, '');
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isLoggedIn, viewModeHistory]);
+
+  // viewMode 변경 시 히스토리 추가 (저장 확인 포함)
+  const handleViewModeChange = (newMode: 'input' | 'review' | 'documents') => {
+    if (newMode === viewMode) return;
+
+    // 평가 입력 모드에서 나갈 때 미저장 데이터 확인
+    if (viewMode === 'input' && hasUnsavedChanges) {
+      setPendingNavigation(newMode);
+      return;
+    }
+
+    // viewMode 변경 및 히스토리 추가
+    setViewMode(newMode);
+    setViewModeHistory(prev => [...prev, newMode]);
+    window.history.pushState({ viewMode: newMode }, '');
+  };
+
+  // 저장 후 네비게이션 진행
+  const proceedWithNavigation = () => {
+    if (pendingNavigation) {
+      setViewMode(pendingNavigation as 'input' | 'review' | 'documents');
+      setViewModeHistory(prev => [...prev, pendingNavigation as 'input' | 'review' | 'documents']);
+      window.history.pushState({ viewMode: pendingNavigation }, '');
+      setPendingNavigation(null);
+      setHasUnsavedChanges(false);
+    }
+  };
+
+  // 네비게이션 취소
+  const cancelNavigation = () => {
+    setPendingNavigation(null);
+  };
+
+  // 로고 클릭 - 평가 입력 화면으로 이동
+  const handleLogoClick = () => {
+    if (viewMode !== 'input') {
+      handleViewModeChange('input');
+    } else {
+      // 이미 평가 입력 화면이면 스크롤만 맨 위로
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (tableContainerRef.current) {
+        tableContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  };
+
+  // 미완료 제안서 목록
+  const incompleteProposals = useMemo(() => {
+    return proposals.filter(p => !savedEvaluations.find(e => e.proposalId === p.id));
+  }, [proposals, savedEvaluations]);
 
   // 이름 수정 시작
   const startEditingName = () => {
@@ -223,8 +368,11 @@ export default function EvaluationPage() {
       const name = tempName.trim();
       setEvaluatorName(name);
       setIsLoggedIn(true);
-      // Supabase에서 데이터 로드
-      await loadEvaluationsFromSupabase(name);
+      // Supabase에서 데이터와 문서 로드 (병렬)
+      await Promise.all([
+        loadEvaluationsFromSupabase(name),
+        loadDocuments(),
+      ]);
     }
   };
 
@@ -353,6 +501,9 @@ export default function EvaluationPage() {
       return updated;
     });
 
+    // 미저장 상태 초기화
+    setHasUnsavedChanges(false);
+
     // 다음 미평가 제안서로 자동 이동
     const unsavedProposals = proposals.filter(p =>
       p.id !== selectedProposal && !savedEvaluations.find(e => e.proposalId === p.id)
@@ -368,7 +519,11 @@ export default function EvaluationPage() {
         mainContentRef.current.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } else {
-      showToast(`제안서 ${currentProposalName} 저장 완료! 모든 평가가 완료되었습니다.`, 'success');
+      // 모든 평가 완료 - 제출 모달 표시
+      showToast(`제안서 ${currentProposalName} 저장 완료!`, 'success');
+      setTimeout(() => {
+        setShowSubmitModal(true);
+      }, 500);
     }
   };
 
@@ -434,6 +589,315 @@ export default function EvaluationPage() {
 
   return (
     <div style={{ height: '100vh', backgroundColor: '#f4f5f6', fontFamily: 'Pretendard, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* 미저장 데이터 확인 모달 */}
+      {pendingNavigation && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '32px' }}>⚠️</span>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#1e2124' }}>저장되지 않은 변경사항</h3>
+            </div>
+            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#464c53', lineHeight: 1.6 }}>
+              현재 평가 입력 내용이 저장되지 않았습니다.<br />
+              저장하지 않고 이동하시겠습니까?
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={cancelNavigation}
+                style={{
+                  padding: '10px 20px',
+                  border: '1px solid #cdd1d5',
+                  borderRadius: '6px',
+                  backgroundColor: '#fff',
+                  color: '#464c53',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={proceedWithNavigation}
+                style={{
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  backgroundColor: '#f05f42',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                저장하지 않고 이동
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 시스템 종료 확인 모달 */}
+      {showExitConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '32px' }}>🚪</span>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#1e2124' }}>시스템 종료</h3>
+            </div>
+            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#464c53', lineHeight: 1.6 }}>
+              시스템을 종료하시겠습니까?<br />
+              저장하지 않은 변경사항이 있을 수 있습니다.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowExitConfirm(false)}
+                style={{
+                  padding: '10px 20px',
+                  border: '1px solid #cdd1d5',
+                  borderRadius: '6px',
+                  backgroundColor: '#fff',
+                  color: '#464c53',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                계속 평가하기
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                style={{
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  backgroundColor: '#de3412',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                종료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 평가 완료 - 제출 안내 모달 */}
+      {showSubmitModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            padding: '28px',
+            maxWidth: '450px',
+            width: '90%',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <span style={{ fontSize: '48px' }}>🎉</span>
+              <h3 style={{ margin: '12px 0 8px 0', fontSize: '20px', fontWeight: 700, color: '#228738' }}>
+                모든 평가가 완료되었습니다!
+              </h3>
+              <p style={{ margin: 0, fontSize: '14px', color: '#464c53' }}>
+                {proposals.length}개 제안서 평가를 모두 마쳤습니다.
+              </p>
+            </div>
+            <div style={{
+              backgroundColor: '#f0faf1',
+              border: '1px solid #b8e6c1',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '20px',
+            }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#1a5928', lineHeight: 1.6 }}>
+                📋 평가 결과를 확인한 후 <strong>평가 제출</strong> 버튼을 눌러 최종 제출해주세요.<br />
+                ⚠️ 제출 후에는 수정이 불가능합니다.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSubmitModal(false);
+                  handleViewModeChange('review');
+                }}
+                style={{
+                  padding: '12px 24px',
+                  border: '1px solid #256ef4',
+                  borderRadius: '6px',
+                  backgroundColor: '#fff',
+                  color: '#256ef4',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                결과 확인하기
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSubmitModal(false)}
+                style={{
+                  padding: '12px 24px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  backgroundColor: '#228738',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 미완료 제안서 확인 모달 */}
+      {showIncompleteModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '32px' }}>📋</span>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#1e2124' }}>미완료 평가 목록</h3>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#464c53' }}>
+              아래 제안서의 평가가 완료되지 않았습니다.
+            </p>
+            <div style={{ marginBottom: '20px' }}>
+              {incompleteProposals.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => {
+                    setShowIncompleteModal(false);
+                    handleProposalSelect(p.id);
+                    handleViewModeChange('input');
+                  }}
+                  style={{
+                    padding: '12px 16px',
+                    backgroundColor: '#fef3c7',
+                    border: '1px solid #fcd34d',
+                    borderRadius: '6px',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#fde68a';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#fef3c7';
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '16px' }}>⚠️</span>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#92400e' }}>제안서 {p.name}</span>
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#b45309' }}>클릭하여 평가하기 →</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowIncompleteModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  backgroundColor: '#256ef4',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 제출 완료 알림 배너 */}
       {isSubmitted && (
         <div style={{
@@ -461,7 +925,22 @@ export default function EvaluationPage() {
       <header style={{ backgroundColor: '#fff', borderBottom: '1px solid #e6e8ea', padding: '8px 16px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#256ef4', margin: 0 }}>제안평가시스템</h1>
+            <h1
+              onClick={handleLogoClick}
+              style={{
+                fontSize: '16px',
+                fontWeight: 700,
+                color: '#256ef4',
+                margin: 0,
+                cursor: 'pointer',
+                transition: 'opacity 0.2s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              title="평가 입력 화면으로 이동"
+            >
+              제안평가시스템
+            </h1>
             <span style={{ fontSize: '12px', color: '#6d7882' }}>{PROJECT_NAME}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -545,17 +1024,17 @@ export default function EvaluationPage() {
               )}
             </div>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button type="button" onClick={() => setViewMode('input')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'input' ? '#256ef4' : '#e6e8ea', color: viewMode === 'input' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+              <button type="button" onClick={() => handleViewModeChange('input')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'input' ? '#256ef4' : '#e6e8ea', color: viewMode === 'input' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
                 평가 입력
               </button>
-              <button type="button" onClick={() => setViewMode('review')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'review' ? '#256ef4' : '#e6e8ea', color: viewMode === 'review' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+              <button type="button" onClick={() => handleViewModeChange('review')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'review' ? '#256ef4' : '#e6e8ea', color: viewMode === 'review' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
                 현황 ({savedEvaluations.length})
               </button>
-              <button type="button" onClick={() => setViewMode('documents')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'documents' ? '#256ef4' : '#e6e8ea', color: viewMode === 'documents' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+              <button type="button" onClick={() => handleViewModeChange('documents')} style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', backgroundColor: viewMode === 'documents' ? '#256ef4' : '#e6e8ea', color: viewMode === 'documents' ? '#fff' : '#464c53', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
                 📁 자료
               </button>
             </div>
-            {/* 평가 제출 버튼 - 모든 제안사 평가 완료 시에만 활성화 */}
+            {/* 평가 제출 버튼 - 미완료 시 클릭하면 미완료 목록 표시 */}
             <button
               type="button"
               onClick={async () => {
@@ -563,55 +1042,57 @@ export default function EvaluationPage() {
                   showToast('이미 제출이 완료되었습니다. 수정이 필요하면 관리자에게 문의하세요.', 'info');
                   return;
                 }
-                if (savedEvaluations.length === proposals.length) {
-                  if (confirm(`${savedEvaluations.length}개 평가를 제출하시겠습니까?\n\n⚠️ 제출 후에는 수정이 불가능합니다.\n수정이 필요한 경우 관리자에게 요청해야 합니다.`)) {
-                    try {
-                      // 평가위원 제출 상태 업데이트
-                      const response = await fetch('/api/evaluators', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          name: evaluatorName,
-                          is_submitted: true,
-                        }),
-                      });
+                // 미완료 제안서가 있으면 목록 모달 표시
+                if (savedEvaluations.length !== proposals.length) {
+                  setShowIncompleteModal(true);
+                  return;
+                }
+                // 모든 평가 완료 시 제출 확인
+                if (confirm(`${savedEvaluations.length}개 평가를 제출하시겠습니까?\n\n⚠️ 제출 후에는 수정이 불가능합니다.\n수정이 필요한 경우 관리자에게 요청해야 합니다.`)) {
+                  try {
+                    // 평가위원 제출 상태 업데이트
+                    const response = await fetch('/api/evaluators', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: evaluatorName,
+                        is_submitted: true,
+                      }),
+                    });
 
-                      if (response.ok) {
-                        setIsSubmitted(true);
-                        setIsSubmissionLocked(true);
-                        showToast('평가가 성공적으로 제출되었습니다!', 'success');
-                      } else {
-                        showToast('제출 중 오류가 발생했습니다.', 'error');
-                      }
-                    } catch (error) {
-                      console.error('Submit error:', error);
+                    if (response.ok) {
+                      setIsSubmitted(true);
+                      setIsSubmissionLocked(true);
+                      showToast('평가가 성공적으로 제출되었습니다!', 'success');
+                    } else {
                       showToast('제출 중 오류가 발생했습니다.', 'error');
                     }
+                  } catch (error) {
+                    console.error('Submit error:', error);
+                    showToast('제출 중 오류가 발생했습니다.', 'error');
                   }
                 }
               }}
-              disabled={savedEvaluations.length !== proposals.length || isSubmitted}
               title={isSubmitted
                 ? '이미 제출이 완료되었습니다'
                 : savedEvaluations.length !== proposals.length
-                ? `모든 제안사 평가 완료 후 제출 가능 (${savedEvaluations.length}/${proposals.length} 완료)`
+                ? `클릭하여 미완료 항목 확인 (${savedEvaluations.length}/${proposals.length} 완료)`
                 : '평가를 관리자에게 제출합니다'}
               style={{
                 padding: '6px 14px',
                 border: 'none',
                 borderRadius: '4px',
-                backgroundColor: isSubmitted ? '#6d7882' : savedEvaluations.length === proposals.length ? '#228738' : '#b1b8be',
+                backgroundColor: isSubmitted ? '#6d7882' : savedEvaluations.length === proposals.length ? '#228738' : '#f59e0b',
                 color: '#fff',
                 fontSize: '13px',
                 fontWeight: 600,
-                cursor: (savedEvaluations.length === proposals.length && !isSubmitted) ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
-                opacity: (savedEvaluations.length === proposals.length || isSubmitted) ? 1 : 0.7,
               }}
             >
-              {isSubmitted ? '✓ 제출완료' : `평가 제출 (${savedEvaluations.length}/${proposals.length})`}
+              {isSubmitted ? '✓ 제출완료' : savedEvaluations.length === proposals.length ? '🚀 평가 제출' : `⚠️ 평가 제출 (${savedEvaluations.length}/${proposals.length})`}
             </button>
             {/* 헤더에 총점 표시 - 현재 평가 중인 제안서 포함 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 12px', backgroundColor: '#256ef4', borderRadius: '6px', color: '#fff' }}>
@@ -675,6 +1156,106 @@ export default function EvaluationPage() {
                   <span style={{ fontSize: '10px', color: '#228738' }}>✓ 저장됨</span>
                 )}
               </div>
+
+              {/* 자료 다운로드 섹션 */}
+              {(() => {
+                const presentationDoc = getDocument(selectedProposal, 'presentation');
+                const qualitativeDoc = getDocument(selectedProposal, 'qualitative');
+                const hasDocuments = presentationDoc || qualitativeDoc;
+
+                if (documentsLoading) {
+                  return (
+                    <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f4f5f6', borderRadius: '6px', textAlign: 'center' }}>
+                      <span style={{ fontSize: '11px', color: '#6d7882' }}>자료 로딩중...</span>
+                    </div>
+                  );
+                }
+
+                if (!hasDocuments) return null;
+
+                return (
+                  <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#fff8e6', borderRadius: '6px', border: '1px solid #ffe082' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '14px' }}>📥</span>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#e65100' }}>자료 다운로드</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {presentationDoc && downloadUrls[presentationDoc.id] && (
+                        <a
+                          href={downloadUrls[presentationDoc.id]}
+                          download={presentationDoc.file_name}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            backgroundColor: '#fff',
+                            border: '1px solid #e6e8ea',
+                            borderRadius: '6px',
+                            textDecoration: 'none',
+                            color: '#1e2124',
+                            fontSize: '12px',
+                            transition: 'all 0.2s',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#ecf2fe';
+                            e.currentTarget.style.borderColor = '#256ef4';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#fff';
+                            e.currentTarget.style.borderColor = '#e6e8ea';
+                          }}
+                        >
+                          <span style={{ fontSize: '16px' }}>📊</span>
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <div style={{ fontWeight: 600, color: '#256ef4' }}>발표자료</div>
+                            <div style={{ fontSize: '10px', color: '#6d7882', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {presentationDoc.file_name}
+                            </div>
+                          </div>
+                          <span style={{ fontSize: '14px', color: '#256ef4' }}>↓</span>
+                        </a>
+                      )}
+                      {qualitativeDoc && downloadUrls[qualitativeDoc.id] && (
+                        <a
+                          href={downloadUrls[qualitativeDoc.id]}
+                          download={qualitativeDoc.file_name}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            backgroundColor: '#fff',
+                            border: '1px solid #e6e8ea',
+                            borderRadius: '6px',
+                            textDecoration: 'none',
+                            color: '#1e2124',
+                            fontSize: '12px',
+                            transition: 'all 0.2s',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#f0faf1';
+                            e.currentTarget.style.borderColor = '#228738';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '#fff';
+                            e.currentTarget.style.borderColor = '#e6e8ea';
+                          }}
+                        >
+                          <span style={{ fontSize: '16px' }}>📑</span>
+                          <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <div style={{ fontWeight: 600, color: '#228738' }}>정성적 제안서</div>
+                            <div style={{ fontSize: '10px', color: '#6d7882', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {qualitativeDoc.file_name}
+                            </div>
+                          </div>
+                          <span style={{ fontSize: '14px', color: '#228738' }}>↓</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* 카테고리 네비게이션 - 클릭 시 스크롤 */}
