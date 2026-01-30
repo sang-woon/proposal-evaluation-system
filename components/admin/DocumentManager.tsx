@@ -396,6 +396,32 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
     );
   };
 
+  // 문서의 제안사 변경
+  const handleChangeProposal = async (documentId: string, newProposalId: string) => {
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await fetch(`/api/documents/${documentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal_id: newProposalId }),
+      });
+
+      const { error } = await res.json();
+
+      if (error) {
+        setError(error);
+        return;
+      }
+
+      setSuccess('문서의 제안사가 변경되었습니다.');
+      fetchDocuments();
+    } catch {
+      setError('제안사 변경 중 오류가 발생했습니다.');
+    }
+  };
+
   // 업로드 버튼 클릭
   const triggerUpload = (key: string) => {
     fileInputRefs.current[key]?.click();
@@ -657,6 +683,8 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
                       onFileSelect={(e) => handleFileSelect(e, 'presentation', proposal.id)}
                       onUploadClick={() => triggerUpload(`${proposal.id}-presentation`)}
                       onDelete={handleDelete}
+                      proposals={proposals}
+                      onChangeProposal={handleChangeProposal}
                     />
                   </div>
 
@@ -681,6 +709,8 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
                       onFileSelect={(e) => handleFileSelect(e, 'qualitative', proposal.id)}
                       onUploadClick={() => triggerUpload(`${proposal.id}-qualitative`)}
                       onDelete={handleDelete}
+                      proposals={proposals}
+                      onChangeProposal={handleChangeProposal}
                     />
                   </div>
                 </div>
@@ -704,10 +734,13 @@ interface DocumentRowProps {
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onUploadClick: () => void;
   onDelete: (id: string) => void;
+  proposals?: Proposal[];
+  onChangeProposal?: (documentId: string, newProposalId: string) => void;
 }
 
 function DocumentRow({
   documentType,
+  proposalId,
   document,
   downloadUrl,
   uploading,
@@ -715,8 +748,18 @@ function DocumentRow({
   onFileSelect,
   onUploadClick,
   onDelete,
+  proposals,
+  onChangeProposal,
 }: DocumentRowProps) {
   const config = DOCUMENT_TYPE_CONFIG[documentType];
+  const [showProposalSelect, setShowProposalSelect] = useState(false);
+
+  const handleProposalChange = (newProposalId: string) => {
+    if (document && onChangeProposal && newProposalId !== proposalId) {
+      onChangeProposal(document.id, newProposalId);
+    }
+    setShowProposalSelect(false);
+  };
 
   return (
     <div className="flex items-center gap-4 bg-gray-50 rounded p-3">
@@ -737,7 +780,7 @@ function DocumentRow({
               {new Date(document.created_at).toLocaleDateString('ko-KR')}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {downloadUrl && (
               <a
                 href={downloadUrl}
@@ -755,6 +798,33 @@ function DocumentRow({
             >
               {uploading ? '업로드 중...' : '변경'}
             </Button>
+            {/* 제안사 변경 (제안사별 문서만) */}
+            {proposals && proposals.length > 1 && onChangeProposal && (
+              showProposalSelect ? (
+                <select
+                  value={proposalId || ''}
+                  onChange={(e) => handleProposalChange(e.target.value)}
+                  onBlur={() => setShowProposalSelect(false)}
+                  autoFocus
+                  className="px-2 py-1 text-sm border rounded focus:ring-2 focus:ring-blue-500"
+                >
+                  {proposals.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowProposalSelect(true)}
+                  title="다른 제안사로 이동"
+                >
+                  이동
+                </Button>
+              )
+            )}
             <Button
               variant="destructive"
               size="sm"

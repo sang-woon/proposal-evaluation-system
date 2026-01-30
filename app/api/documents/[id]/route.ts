@@ -58,6 +58,71 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+// PATCH: 문서 정보 수정 (제안사 변경)
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    // 문서 정보 조회
+    const { data: document, error: fetchError } = await supabase
+      .from('proposal_document')
+      .select('*')
+      .eq('id', id)
+      .single<ProposalDocument>();
+
+    if (fetchError || !document) {
+      return NextResponse.json(
+        { data: null, error: '문서를 찾을 수 없습니다.' },
+        { status: 404 }
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+
+    // proposal_id 변경
+    if (body.proposal_id !== undefined) {
+      updateData.proposal_id = body.proposal_id;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { data: null, error: '수정할 데이터가 없습니다.' },
+        { status: 400 }
+      );
+    }
+
+    // DB 업데이트
+    const { data: updatedDoc, error: updateError } = await supabase
+      .from('proposal_document')
+      .update(updateData as never)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      return NextResponse.json(
+        { data: null, error: `문서 수정 실패: ${updateError.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      data: {
+        document: updatedDoc,
+        message: '문서가 수정되었습니다.',
+      },
+      error: null,
+    });
+  } catch (error) {
+    console.error('PATCH /api/documents/[id] error:', error);
+    return NextResponse.json(
+      { data: null, error: '문서 수정 중 오류가 발생했습니다.' },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE: 문서 삭제
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
