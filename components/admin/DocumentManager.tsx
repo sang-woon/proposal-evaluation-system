@@ -8,8 +8,11 @@ import {
   ProposalDocument,
   DOCUMENT_TYPE_CONFIG,
   formatFileSize,
+  validateFile,
+  generateStoragePath,
 } from '@/types/document';
 import type { Proposal } from '@/types/database';
+import { supabase } from '@/lib/supabase';
 
 // 일괄 업로드용 파일 정보 인터페이스
 interface BulkUploadFile {
@@ -106,7 +109,7 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
     setBulkFiles([]);
   };
 
-  // 일괄 업로드 실행
+  // 일괄 업로드 실행 (클라이언트에서 직접 Supabase Storage로 업로드)
   const executeBulkUpload = async () => {
     // 유효성 검사
     const invalidFiles = bulkFiles.filter(
@@ -134,35 +137,80 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
       );
 
       try {
-        const formData = new FormData();
-        formData.append('file', bulkFile.file);
-        formData.append('documentType', bulkFile.selectedType!);
-        formData.append('proposalId', bulkFile.selectedProposalId!);
+        const file = bulkFile.file;
+        const documentType = bulkFile.selectedType!;
+        const proposalId = bulkFile.selectedProposalId!;
 
-        const res = await fetch('/api/documents/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const { error } = await res.json();
-
-        if (error) {
-          setBulkFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i ? { ...f, status: 'error' as const, errorMessage: error } : f
-            )
-          );
-          errorCount++;
-        } else {
-          setBulkFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, status: 'success' as const } : f))
-          );
-          successCount++;
+        // 1. 파일 검증
+        const validation = validateFile(file, documentType);
+        if (!validation.valid) {
+          throw new Error(validation.error || '파일 검증 실패');
         }
-      } catch {
+
+        // 2. 기존 문서 확인 및 삭제
+        const { data: existingDocs } = await supabase
+          .from('proposal_document')
+          .select('id, storage_path')
+          .eq('document_type', documentType)
+          .eq('proposal_id', proposalId);
+
+        if (existingDocs && existingDocs.length > 0) {
+          for (const doc of existingDocs as { id: string; storage_path: string }[]) {
+            await supabase.storage
+              .from('proposal-documents')
+              .remove([doc.storage_path]);
+            await supabase
+              .from('proposal_document')
+              .delete()
+              .eq('id', doc.id);
+          }
+        }
+
+        // 3. 스토리지 경로 생성
+        const storagePath = generateStoragePath(proposalId, documentType, file.name);
+
+        // 4. 클라이언트에서 직접 Supabase Storage에 업로드
+        const { error: uploadError } = await supabase.storage
+          .from('proposal-documents')
+          .upload(storagePath, file, {
+            contentType: file.type || 'application/octet-stream',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          throw new Error(`파일 업로드 실패: ${uploadError.message}`);
+        }
+
+        // 5. DB에 메타데이터 저장
+        const { error: dbError } = await supabase
+          .from('proposal_document')
+          .insert({
+            proposal_id: proposalId,
+            document_type: documentType,
+            file_name: file.name,
+            file_size: file.size,
+            mime_type: file.type || 'application/octet-stream',
+            storage_path: storagePath,
+            uploaded_by: 'admin',
+          } as never);
+
+        if (dbError) {
+          // DB 실패 시 업로드된 파일 삭제
+          await supabase.storage
+            .from('proposal-documents')
+            .remove([storagePath]);
+          throw new Error(`문서 정보 저장 실패: ${dbError.message}`);
+        }
+
+        setBulkFiles((prev) =>
+          prev.map((f, idx) => (idx === i ? { ...f, status: 'success' as const } : f))
+        );
+        successCount++;
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : '업로드 실패';
         setBulkFiles((prev) =>
           prev.map((f, idx) =>
-            idx === i ? { ...f, status: 'error' as const, errorMessage: '업로드 실패' } : f
+            idx === i ? { ...f, status: 'error' as const, errorMessage } : f
           )
         );
         errorCount++;
@@ -204,7 +252,7 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
     fetchDocuments();
   }, [fetchDocuments]);
 
-  // 파일 업로드
+  // 파일 업로드 (클라이언트에서 직접 Supabase Storage로 업로드)
   const handleUpload = async (
     file: File,
     documentType: DocumentType,
@@ -216,28 +264,84 @@ export function DocumentManager({ proposals, onProposalsChange }: DocumentManage
     setSuccess(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('documentType', documentType);
-      if (proposalId) {
-        formData.append('proposalId', proposalId);
-      }
-
-      const res = await fetch('/api/documents/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const { data, error } = await res.json();
-
-      if (error) {
-        setError(error);
+      // 1. 파일 검증
+      const validation = validateFile(file, documentType);
+      if (!validation.valid) {
+        setError(validation.error || '파일 검증 실패');
         return;
       }
 
-      setSuccess(data.message);
+      // 2. 기존 문서 확인 및 삭제
+      const existingQuery = supabase
+        .from('proposal_document')
+        .select('id, storage_path')
+        .eq('document_type', documentType);
+
+      if (proposalId) {
+        existingQuery.eq('proposal_id', proposalId);
+      } else {
+        existingQuery.is('proposal_id', null);
+      }
+
+      const { data: existingDocs } = await existingQuery;
+
+      // 기존 문서가 있으면 Storage와 DB에서 삭제
+      if (existingDocs && existingDocs.length > 0) {
+        for (const doc of existingDocs as { id: string; storage_path: string }[]) {
+          await supabase.storage
+            .from('proposal-documents')
+            .remove([doc.storage_path]);
+          await supabase
+            .from('proposal_document')
+            .delete()
+            .eq('id', doc.id);
+        }
+      }
+
+      // 3. 스토리지 경로 생성
+      const storagePath = generateStoragePath(proposalId, documentType, file.name);
+
+      // 4. 클라이언트에서 직접 Supabase Storage에 업로드
+      const { error: uploadError } = await supabase.storage
+        .from('proposal-documents')
+        .upload(storagePath, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        setError(`파일 업로드 실패: ${uploadError.message}`);
+        return;
+      }
+
+      // 5. DB에 메타데이터 저장
+      const { error: dbError } = await supabase
+        .from('proposal_document')
+        .insert({
+          proposal_id: proposalId || null,
+          document_type: documentType,
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type || 'application/octet-stream',
+          storage_path: storagePath,
+          uploaded_by: 'admin',
+        } as never);
+
+      if (dbError) {
+        console.error('DB insert error:', dbError);
+        // DB 실패 시 업로드된 파일 삭제
+        await supabase.storage
+          .from('proposal-documents')
+          .remove([storagePath]);
+        setError(`문서 정보 저장 실패: ${dbError.message}`);
+        return;
+      }
+
+      setSuccess('파일이 업로드되었습니다.');
       fetchDocuments();
-    } catch {
+    } catch (err) {
+      console.error('Upload error:', err);
       setError('파일 업로드 중 오류가 발생했습니다.');
     } finally {
       setUploading(null);

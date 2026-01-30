@@ -66,6 +66,49 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ data, error: null }, { status: 201 });
 }
 
+// PATCH: 제안서 정보 수정 (이름, 순서 변경)
+export async function PATCH(request: NextRequest) {
+  const body = await request.json();
+
+  if (!body.id) {
+    return NextResponse.json(
+      { data: null, error: { message: '제안서 ID가 필요합니다.', code: 'VALIDATION_ERROR' } },
+      { status: 400 }
+    );
+  }
+
+  const updateData: Record<string, unknown> = {};
+  if (body.name !== undefined) {
+    updateData.name = body.name;
+  }
+  if (body.order_num !== undefined) {
+    updateData.order_num = body.order_num;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json(
+      { data: null, error: { message: '수정할 데이터가 없습니다.', code: 'VALIDATION_ERROR' } },
+      { status: 400 }
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('proposal')
+    .update(updateData as never)
+    .eq('id', body.id)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json(
+      { data: null, error: { message: error.message, code: error.code } },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ data, error: null });
+}
+
 // DELETE: 제안서 삭제 (관련 평가 데이터도 함께 삭제)
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);

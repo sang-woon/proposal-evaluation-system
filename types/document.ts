@@ -60,8 +60,8 @@ export const DOCUMENT_TYPE_CONFIG: Record<DocumentType, {
       'application/vnd.ms-powerpoint',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     ],
-    maxSizeBytes: 50 * 1024 * 1024, // 50MB
-    maxSizeMB: 50,
+    maxSizeBytes: 150 * 1024 * 1024, // 150MB
+    maxSizeMB: 150,
     requiresProposal: true,
   },
   qualitative: {
@@ -70,8 +70,8 @@ export const DOCUMENT_TYPE_CONFIG: Record<DocumentType, {
     description: '정성적 평가용 제안서 (PDF)',
     allowedExtensions: ['.pdf'],
     allowedMimeTypes: ['application/pdf'],
-    maxSizeBytes: 100 * 1024 * 1024, // 100MB
-    maxSizeMB: 100,
+    maxSizeBytes: 150 * 1024 * 1024, // 150MB
+    maxSizeMB: 150,
     requiresProposal: true,
   },
   security: {
@@ -95,8 +95,8 @@ export const DOCUMENT_TYPE_CONFIG: Record<DocumentType, {
     description: '제안요청서 (PDF)',
     allowedExtensions: ['.pdf'],
     allowedMimeTypes: ['application/pdf'],
-    maxSizeBytes: 100 * 1024 * 1024, // 100MB
-    maxSizeMB: 100,
+    maxSizeBytes: 150 * 1024 * 1024, // 150MB
+    maxSizeMB: 150,
     requiresProposal: false, // 공통 문서
   },
 };

@@ -1147,6 +1147,55 @@ export default function AdminDashboardPage() {
     setProposalLoading(false);
   };
 
+  // 제안사 순서 변경
+  const handleMoveProposal = async (proposalId: string, direction: 'up' | 'down') => {
+    const currentIndex = proposals.findIndex(p => p.id === proposalId);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= proposals.length) return;
+
+    setProposalLoading(true);
+    try {
+      // 두 제안사의 order_num을 서로 교환
+      const currentProposal = proposals[currentIndex];
+      const targetProposal = proposals[newIndex];
+
+      // API 호출로 순서 업데이트
+      await Promise.all([
+        fetch('/api/proposals', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: currentProposal.id,
+            order_num: targetProposal.order_num,
+          }),
+        }),
+        fetch('/api/proposals', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: targetProposal.id,
+            order_num: currentProposal.order_num,
+          }),
+        }),
+      ]);
+
+      // 로컬 상태 업데이트 (배열에서 위치 교환)
+      const newProposals = [...proposals];
+      [newProposals[currentIndex], newProposals[newIndex]] = [newProposals[newIndex], newProposals[currentIndex]];
+      // order_num도 교환
+      const tempOrderNum = newProposals[currentIndex].order_num;
+      newProposals[currentIndex].order_num = newProposals[newIndex].order_num;
+      newProposals[newIndex].order_num = tempOrderNum;
+      setProposals(newProposals);
+    } catch (e) {
+      console.error('제안사 순서 변경 실패:', e);
+      alert('순서 변경 중 오류가 발생했습니다.');
+    }
+    setProposalLoading(false);
+  };
+
   // 제안사 삭제
   const handleDeleteProposal = async (proposalId: string, proposalName: string) => {
     if (!confirm(`제안사 "${proposalName}"을(를) 삭제하시겠습니까?\n\n관련된 모든 평가 데이터도 함께 삭제됩니다.`)) {
@@ -2168,22 +2217,61 @@ export default function AdminDashboardPage() {
                         제안사 {proposal.name}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteProposal(proposal.id, proposal.name)}
-                      disabled={proposalLoading}
-                      style={{
-                        padding: '6px 12px',
-                        border: '1px solid #cdd1d5',
-                        borderRadius: '4px',
-                        backgroundColor: '#fff',
-                        color: '#6d7882',
-                        fontSize: '13px',
-                        cursor: proposalLoading ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      삭제
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {/* 순서 변경 버튼 */}
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveProposal(proposal.id, 'up')}
+                          disabled={proposalLoading || index === 0}
+                          title="위로 이동"
+                          style={{
+                            padding: '6px 10px',
+                            border: '1px solid #cdd1d5',
+                            borderRadius: '4px',
+                            backgroundColor: index === 0 ? '#f4f5f6' : '#fff',
+                            color: index === 0 ? '#b1b8be' : '#256ef4',
+                            fontSize: '14px',
+                            cursor: proposalLoading || index === 0 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveProposal(proposal.id, 'down')}
+                          disabled={proposalLoading || index === proposals.length - 1}
+                          title="아래로 이동"
+                          style={{
+                            padding: '6px 10px',
+                            border: '1px solid #cdd1d5',
+                            borderRadius: '4px',
+                            backgroundColor: index === proposals.length - 1 ? '#f4f5f6' : '#fff',
+                            color: index === proposals.length - 1 ? '#b1b8be' : '#256ef4',
+                            fontSize: '14px',
+                            cursor: proposalLoading || index === proposals.length - 1 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          ▼
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProposal(proposal.id, proposal.name)}
+                        disabled={proposalLoading}
+                        style={{
+                          padding: '6px 12px',
+                          border: '1px solid #cdd1d5',
+                          borderRadius: '4px',
+                          backgroundColor: '#fff',
+                          color: '#6d7882',
+                          fontSize: '13px',
+                          cursor: proposalLoading ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
